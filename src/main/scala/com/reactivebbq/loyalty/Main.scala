@@ -3,6 +3,7 @@ package com.reactivebbq.loyalty
 import java.nio.file.Paths
 
 import akka.actor.ActorSystem
+import akka.cluster.sharding.{ClusterSharding, ClusterShardingSettings}
 import akka.http.scaladsl.Http
 import org.slf4j.LoggerFactory
 
@@ -19,20 +20,19 @@ object Main extends App {
   implicit val system: ActorSystem = ActorSystem("Loyalty")
 
   val rootPath = Paths.get("tmp")
-  val loyaltyRepository: LoyaltyRepository = new FileBasedLoyaltyRepository(rootPath)(system.dispatcher)
+  val loyaltyRepository: LoyaltyRepository =
+    new FileBasedLoyaltyRepository(rootPath)(system.dispatcher)
 
-  val loyaltyActorSupervisor = system.actorOf(LoyaltyActorSupervisor.props(loyaltyRepository))
+  val loyaltyActorSupervisor = ClusterSharding(system).start(
+    "loyalty",
+    LoyaltyActor.props(loyaltyRepository),
+    ClusterShardingSettings(system),
+    LoyaltyActorSupervisor.idExtractor,
+    LoyaltyActorSupervisor.shardIdExtractor
+  )
 
-  // TODO: Uncomment to enable cluster sharding.
-  //  val loyaltyActorSupervisor = ClusterSharding(system).start(
-  //    "loyalty",
-  //    LoyaltyActor.props(loyaltyRepository),
-  //    ClusterShardingSettings(system),
-  //    LoyaltyActorSupervisor.idExtractor,
-  //    LoyaltyActorSupervisor.shardIdExtractor
-  //  )
-
-  val loyaltyRoutes = new LoyaltyRoutes(loyaltyActorSupervisor)(system.dispatcher)
+  val loyaltyRoutes =
+    new LoyaltyRoutes(loyaltyActorSupervisor)(system.dispatcher)
 
   Http().bindAndHandle(loyaltyRoutes.routes, "localhost")
 }
